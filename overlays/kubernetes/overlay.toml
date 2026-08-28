@@ -1,0 +1,3 @@
+name = "kubernetes"
+description = "Kubernetes manifests, probes, resource policies and rollout checks"
+

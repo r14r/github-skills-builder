@@ -1,0 +1,8 @@
+[project]
+name = "AI Task Studio"
+slug = "ai-task-studio"
+profile = "application"
+version = "0.5.0"
+description = "Local task automation and orchestration platform"
+overlays = ["ai", "task-orchestration", "update-cli"]
+

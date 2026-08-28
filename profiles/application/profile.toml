@@ -1,0 +1,5 @@
+name = "application"
+description = "Applications, APIs, workers, dashboards and CLIs"
+required_directories = ["config", "docs", "scripts", "tests"]
+allowed_overlays = ["ai", "cli", "kubernetes", "media", "task-orchestration", "update-cli"]
+

@@ -1,0 +1,5 @@
+schema: 2
+project:
+  name: ${PROJECT_NAME}
+steps: []
+

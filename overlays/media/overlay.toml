@@ -1,0 +1,3 @@
+name = "media"
+description = "Media workers, FFmpeg pipelines and persistent workspaces"
+

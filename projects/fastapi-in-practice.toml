@@ -1,0 +1,8 @@
+[project]
+name = "FastAPI in Practice"
+slug = "fastapi-in-practice"
+profile = "publishing"
+version = "1.0.0"
+description = "Practical FastAPI book and runnable learning project"
+overlays = ["curriculum"]
+

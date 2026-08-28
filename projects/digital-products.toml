@@ -1,0 +1,8 @@
+[project]
+name = "Digital Products Platform"
+slug = "digital-products-platform"
+profile = "platform"
+version = "5.0.0"
+description = "Multi-application digital product creation and publishing platform"
+overlays = ["ai", "update-cli"]
+

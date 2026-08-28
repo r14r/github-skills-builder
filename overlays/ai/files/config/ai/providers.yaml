@@ -1,0 +1,5 @@
+providers:
+  - id: ollama
+    type: openai-compatible
+    base_url_env: OLLAMA_BASE_URL
+
