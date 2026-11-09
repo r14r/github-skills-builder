@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from string import Template
 import tomllib
@@ -27,23 +28,38 @@ def names(kind: str) -> list[str]:
 
 def project_config(path: Path) -> dict:
     data = load_toml(path)
-    project = data.get("project", {})
+    project = dict(data.get("project", {}))
     required = {"name", "slug", "profile", "version", "description"}
     missing = sorted(required - project.keys())
     if missing:
         raise FactoryError(f"missing project keys: {', '.join(missing)}")
     project.setdefault("overlays", [])
+    project["_config"] = {key: value for key, value in data.items() if key != "project"}
     return project
 
 
 def variables(project: dict) -> dict[str, str]:
-    return {
+    config = project.get("_config", {})
+    ports = config.get("ports", {})
+    base = int(ports.get("base", 60000))
+    values = {
         "PROJECT_NAME": str(project["name"]),
         "PROJECT_SLUG": str(project["slug"]),
         "PROJECT_VERSION": str(project["version"]),
         "PROJECT_PROFILE": str(project["profile"]),
         "PROJECT_DESCRIPTION": str(project["description"]),
+        "BASE_PORT": str(base),
+        "FRONTEND_PORT": str(ports.get("frontend", base)),
+        "BACKEND_PORT": str(ports.get("backend", base + 100)),
+        "DATABASE_PORT": str(ports.get("database", base + 200)),
+        "REDIS_PORT": str(ports.get("redis", base + 300)),
+        "OLLAMA_PORT": str(ports.get("ollama", base + 434)),
     }
+    application = config.get("application", {})
+    values["PYTHON_VERSION"] = str(application.get("python_version", "3.12"))
+    values["NODE_VERSION"] = str(application.get("node_version", "22"))
+    values["DATABASE_NAME"] = str(application.get("database_name", project["slug"].replace("-", "_")))
+    return values
 
 
 def render(content: str, values: dict[str, str], source: Path) -> str:
@@ -132,14 +148,17 @@ def compose(project: dict) -> tuple[dict[str, bytes], dict]:
         output.setdefault(f"{directory}/.gitkeep", b"")
 
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "generator_version": (ROOT / "VERSION").read_text().strip(),
         "profile": profile,
         "overlays": overlays,
         "skills": sorted(set(skills)),
         "variables": values,
     }
-    manifest["files"] = sorted(output)
+    manifest["files"] = {
+        name: hashlib.sha256(content).hexdigest()
+        for name, content in sorted(output.items())
+    }
     output[".template-manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     return output, manifest
 
@@ -166,9 +185,16 @@ def validate(path: Path) -> list[str]:
     if manifest_path.exists():
         try:
             manifest = json.loads(manifest_path.read_text())
-            for name in manifest.get("files", []):
+            files = manifest.get("files", {})
+            names_in_manifest = files if isinstance(files, dict) else files
+            for name in names_in_manifest:
                 if not (path / name).exists():
                     errors.append(f"manifest file missing: {name}")
+            if isinstance(files, dict):
+                for name, expected in files.items():
+                    target = path / name
+                    if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                        errors.append(f"managed file modified: {name}")
         except (json.JSONDecodeError, OSError) as exc:
             errors.append(f"invalid manifest: {exc}")
     skill_root = path / ".agents" / "skills"
@@ -177,4 +203,128 @@ def validate(path: Path) -> list[str]:
             if skill.is_dir() and not (skill / "SKILL.md").is_file():
                 errors.append(f"skill missing SKILL.md: {skill.name}")
     return errors
+
+
+def apply_project(
+    project: dict,
+    target: Path,
+    *,
+    dry_run: bool = False,
+    accept: bool = False,
+    backup: bool = False,
+) -> dict:
+    generated, manifest = compose(project)
+    old_manifest_path = target / ".template-manifest.json"
+    old_hashes: dict[str, str] = {}
+    if old_manifest_path.exists():
+        old = json.loads(old_manifest_path.read_text())
+        if isinstance(old.get("files"), dict):
+            old_hashes = old["files"]
+
+    plan = {"create": [], "update": [], "unchanged": [], "conflicts": [], "preserved": []}
+    for relative, content in sorted(generated.items()):
+        destination = target / relative
+        desired_hash = hashlib.sha256(content).hexdigest()
+        if not destination.exists():
+            plan["create"].append(relative)
+        elif destination.is_file() and hashlib.sha256(destination.read_bytes()).hexdigest() == desired_hash:
+            plan["unchanged"].append(relative)
+        elif relative in old_hashes and destination.is_file() and hashlib.sha256(destination.read_bytes()).hexdigest() == old_hashes[relative]:
+            plan["update"].append(relative)
+        else:
+            plan["conflicts"].append(relative)
+
+    if target.exists():
+        managed = set(old_hashes) | set(generated)
+        plan["preserved"] = sorted(
+            p.relative_to(target).as_posix()
+            for p in target.rglob("*")
+            if p.is_file()
+            and p.relative_to(target).as_posix() not in managed
+            and ".template-backups" not in p.parts
+        )
+    if dry_run:
+        return plan
+    if plan["conflicts"] and not accept:
+        raise FactoryError("apply conflicts: " + ", ".join(plan["conflicts"]))
+
+    backup_root = None
+    if backup and plan["conflicts"]:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        backup_root = target / ".template-backups" / stamp
+    target.mkdir(parents=True, exist_ok=True)
+    for relative in plan["create"] + plan["update"] + (plan["conflicts"] if accept else []):
+        destination = target / relative
+        if backup_root and destination.exists():
+            copy = backup_root / relative
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(destination, copy)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(generated[relative])
+    (target / ".template-manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    )
+    return plan
+
+
+def analyze_project(path: Path) -> dict:
+    if not path.is_dir():
+        raise FactoryError(f"not a directory: {path}")
+    files = {
+        p.relative_to(path).as_posix().lower()
+        for p in path.rglob("*")
+        if p.is_file() and ".git" not in p.parts
+    }
+    text_suffixes = {
+        ".json", ".md", ".py", ".toml", ".ts", ".vue", ".yaml", ".yml",
+    }
+    content_parts = [*sorted(files)]
+    for source in path.rglob("*"):
+        if (
+            source.is_file()
+            and source.suffix.lower() in text_suffixes
+            and ".git" not in source.parts
+            and source.stat().st_size <= 256_000
+        ):
+            try:
+                content_parts.append(source.read_text(errors="ignore").lower())
+            except OSError:
+                pass
+    joined = "\n".join(content_parts)
+    profile = "application"
+    reasons: list[str] = []
+    if any(name.startswith(("content/", "chapters/", "exercises/")) for name in files):
+        profile = "publishing"
+        reasons.append("publishing content directories detected")
+    if any(name.startswith(("apps/", "services/", "packages/", "products/")) for name in files):
+        profile = "platform"
+        reasons.append("multi-application platform directories detected")
+    overlays: list[str] = []
+    checks = [
+        ("fastapi-nuxt", ("fastapi", "nuxt.config", "package.json")),
+        ("ai", ("config/ai/", "ollama", "langchain", "openai")),
+        ("streamlit", ("streamlit",)),
+        ("media", ("ffmpeg", "media")),
+        ("kubernetes", ("kubernetes", "k8s", "helm")),
+        ("cli", ("cmd/", "cobra", "argparse")),
+        ("task-orchestration", ("scheduler", "celery", "apscheduler")),
+        ("update-cli", ("update-cli.yaml",)),
+        ("multi-database", ("postgres", "mysql", "sqlite")),
+    ]
+    for overlay, needles in checks:
+        if any(needle in joined for needle in needles):
+            overlays.append(overlay)
+    compose_files = sorted(name for name in files if Path(name).name in {"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"})
+    missing = [
+        name for name in ("AGENTS.md", ".env.example", "VERSION")
+        if name.lower() not in files
+    ]
+    return {
+        "path": str(path.resolve()),
+        "profile": profile,
+        "recommended_overlays": overlays,
+        "compose_files": compose_files,
+        "missing_baseline_files": missing,
+        "reasons": reasons or ["application structure is the best match"],
+    }
 

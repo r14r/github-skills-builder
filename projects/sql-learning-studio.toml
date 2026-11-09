@@ -1,0 +1,15 @@
+[project]
+name = "SQL Learning Studio"
+slug = "sql-learning-studio"
+profile = "application"
+version = "0.1.0"
+description = "Interactive SQL learning environment with multiple database engines"
+overlays = ["streamlit", "multi-database", "update-cli"]
+
+[application]
+python_version = "3.12"
+database_name = "sql_learning_studio"
+
+[ports]
+base = 61000
+

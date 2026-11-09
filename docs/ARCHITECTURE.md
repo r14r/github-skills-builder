@@ -24,3 +24,20 @@ Profiles describe broad repository shapes:
 Overlays add bounded capabilities without cloning a profile. The generated
 `.template-manifest.json` records profile, overlays, variables, and files.
 
+Each managed file also has a SHA-256 hash. The `apply` command uses these
+hashes to distinguish unchanged generated content from user modifications.
+Files that are not in the previous manifest are user-owned and are never
+removed. Conflicting managed files require an explicit `--accept`; with
+`--backup`, their previous content is copied below
+`.template-backups/<timestamp>/` before replacement.
+
+Application port variables are derived from `[ports].base`:
+
+| Service | Offset | Default |
+|---|---:|---:|
+| Frontend | 000 | 60000 |
+| Backend | 100 | 60100 |
+| Database | 200 | 60200 |
+| Redis | 300 | 60300 |
+| Ollama | 434 | 60434 |
+

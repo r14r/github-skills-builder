@@ -1,5 +1,5 @@
 name = "platform"
 description = "Multi-application product platforms and suites"
 required_directories = ["apps", "services", "packages", "products", "config", "infrastructure", "releases", "docs", "scripts", "tests"]
-allowed_overlays = ["ai", "kubernetes", "update-cli"]
+allowed_overlays = ["ai", "fastapi-nuxt", "kubernetes", "update-cli"]
 

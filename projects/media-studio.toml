@@ -1,0 +1,16 @@
+[project]
+name = "Media Studio"
+slug = "media-studio"
+profile = "application"
+version = "0.1.0"
+description = "AI-assisted media processing, transcription and publishing workspace"
+overlays = ["fastapi-nuxt", "ai", "media", "update-cli"]
+
+[application]
+python_version = "3.12"
+node_version = "22"
+database_name = "media_studio"
+
+[ports]
+base = 60000
+

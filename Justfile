@@ -13,6 +13,12 @@ generate-all:
 generate project:
     python3 scripts/create_project.py generate --config projects/{{project}}.toml
 
+analyze path:
+    python3 scripts/create_project.py analyze {{path}}
+
+apply project target:
+    python3 scripts/create_project.py apply --config projects/{{project}}.toml --target {{target}} --dry-run
+
 test:
     python3 -m unittest discover -s tests -v
 

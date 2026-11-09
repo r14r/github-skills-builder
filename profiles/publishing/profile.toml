@@ -1,5 +1,5 @@
 name = "publishing"
 description = "Books, curricula, courses and digital publications"
 required_directories = ["content", "examples", "exercises", "solutions", "assets", "metadata", "products", "scripts", "tests"]
-allowed_overlays = ["ai", "curriculum", "kubernetes"]
+allowed_overlays = ["ai", "curriculum", "kubernetes", "runnable-labs"]
 
